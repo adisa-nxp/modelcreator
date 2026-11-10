@@ -78,75 +78,75 @@ class TestCocoSchemaFailures(unittest.TestCase):
         data = valid_base_dataset()
         data["categories"][0]["keypoints"] = "not-a-list"
         with self.assertRaises(ValidationError):
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
 
     def test_category_keypoints_not_strings(self):
         data = valid_base_dataset()
         data["categories"][0]["keypoints"] = [1, 2]
         with self.assertRaises(ValidationError):
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
 
     def test_category_keypoints_empty_strings(self):
         data = valid_base_dataset()
         data["categories"][0]["keypoints"] = ["ok", "  "]
         with self.assertRaises(ValidationError):
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
 
     def test_skeleton_not_list(self):
         data = valid_base_dataset()
         data["categories"][0]["keypoints"] = ["a", "b"]
         data["categories"][0]["skeleton"] = "not-a-list"
         with self.assertRaises(ValidationError):
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
 
     def test_skeleton_bad_pair_shape(self):
         data = valid_base_dataset()
         data["categories"][0]["keypoints"] = ["a", "b"]
         data["categories"][0]["skeleton"] = [[1, 2], [3]]  # second pair invalid
         with self.assertRaises(ValidationError):
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
 
     def test_skeleton_non_int_indices(self):
         data = valid_base_dataset()
         data["categories"][0]["keypoints"] = ["a", "b"]
         data["categories"][0]["skeleton"] = [["1", 2]]
         with self.assertRaises(ValidationError):
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
 
     def test_skeleton_zero_or_negative(self):
         data = valid_base_dataset()
         data["categories"][0]["keypoints"] = ["a", "b"]
         data["categories"][0]["skeleton"] = [[0, 2]]
         with self.assertRaises(ValidationError):
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
 
     def test_skeleton_out_of_range(self):
         data = valid_base_dataset()
         data["categories"][0]["keypoints"] = ["a", "b"]
         data["categories"][0]["skeleton"] = [[1, 3]]  # only 2 keypoints
         with self.assertRaises(ValidationError):
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
 
     # image failures
     def test_image_missing_license_reference(self):
         data = valid_base_dataset()
         data["images"][0]["license"] = 999
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("references unknown license id", str(ctx.exception))
 
     def test_image_empty_filename(self):
         data = valid_base_dataset()
         data["images"][0]["file_name"] = "   "
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("non-empty 'file_name'", str(ctx.exception))
 
     def test_duplicate_image_filenames(self):
         data = valid_base_dataset()
         data["images"].append({"id": 2, "file_name": "img_0001.jpg", "license": 1})
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("Duplicate image file_name", str(ctx.exception))
 
     # annotation field validator failures
@@ -154,21 +154,22 @@ class TestCocoSchemaFailures(unittest.TestCase):
         data = valid_base_dataset()
         data["annotations"][0]["bbox"] = [1, 2, 3]  # not 4
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("bbox must have 4 elements", str(ctx.exception))
 
     def test_bbox_non_numeric(self):
         data = valid_base_dataset()
         data["annotations"][0]["bbox"] = [0, "y", 10, 10]
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
-        self.assertIn("value is not a valid", str(ctx.exception))
+            CocoDataset.model_validate(data)
+        # pydantic v2 wording: "Input should be a valid integer/number"
+        self.assertRegex(str(ctx.exception), r"valid (integer|number)")
 
     def test_bbox_negative(self):
         data = valid_base_dataset()
         data["annotations"][0]["bbox"] = [0, 0, -5, 10]
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("bbox values must be non-negative", str(ctx.exception))
 
     def test_keypoints_not_list_or_bad_mod(self):
@@ -177,14 +178,14 @@ class TestCocoSchemaFailures(unittest.TestCase):
         # root validator will require ann.keypoints present; give wrong shape to trigger field validator
         data["annotations"][0]["keypoints"] = [0, 0, 2, 1]  # len%3 != 0
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("keypoints must be a flat list", str(ctx.exception))
 
     def test_keypoints_bad_visibility_value(self):
         data = valid_kp_dataset(K=2)
         data["annotations"][0]["keypoints"][2] = 9  # v must be 0,1,2
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("visibility values must be 0,1,2", str(ctx.exception))
 
     def test_keypoints_v0_requires_zero_coords(self):
@@ -192,7 +193,7 @@ class TestCocoSchemaFailures(unittest.TestCase):
         # set first triplet to v=0 but coords not zero
         data["annotations"][0]["keypoints"][:3] = [5, 5, 0]
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("When visibility v=0", str(ctx.exception))
 
     def test_keypoints_visible_coords_must_be_non_negative(self):
@@ -200,7 +201,7 @@ class TestCocoSchemaFailures(unittest.TestCase):
         # make one visible kp negative
         data["annotations"][0]["keypoints"][0:3] = [-1, 0, 2]
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn(
             "Visible keypoints must have non-negative coordinates", str(ctx.exception)
         )
@@ -209,7 +210,7 @@ class TestCocoSchemaFailures(unittest.TestCase):
         data = valid_base_dataset()
         data["annotations"][0]["iscrowd"] = 2  # not 0/1
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("iscrowd must be integer 0 or 1", str(ctx.exception))
 
     # root validator failures: uniqueness
@@ -217,21 +218,21 @@ class TestCocoSchemaFailures(unittest.TestCase):
         data = valid_base_dataset()
         data["licenses"].append({"id": 1, "name": "dup"})
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("Duplicate license id", str(ctx.exception))
 
     def test_duplicate_category_ids(self):
         data = valid_base_dataset()
         data["categories"].append({"id": 1, "name": "dog", "supercategory": "animal"})
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("Category ids must be contiguous", str(ctx.exception))
 
     def test_duplicate_image_ids(self):
         data = valid_base_dataset()
         data["images"].append({"id": 1, "file_name": "img_0002.jpg", "license": 1})
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("Duplicate image id", str(ctx.exception))
 
     def test_duplicate_annotation_ids(self):
@@ -242,7 +243,7 @@ class TestCocoSchemaFailures(unittest.TestCase):
         ann["category_id"] = 1
         data["annotations"].append(ann)
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("Duplicate annotation id", str(ctx.exception))
 
     # root validator failures: category name uniqueness
@@ -253,7 +254,7 @@ class TestCocoSchemaFailures(unittest.TestCase):
             {"id": 2, "name": "cat", "supercategory": "animal"},
         ]
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("Duplicate category name", str(ctx.exception))
 
     # root validator failures: category ids must be contiguous starting at 1
@@ -264,7 +265,7 @@ class TestCocoSchemaFailures(unittest.TestCase):
             {"id": 3, "name": "b", "supercategory": "animal"},
         ]
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn(
             "Category ids must be contiguous starting at 1", str(ctx.exception)
         )
@@ -274,14 +275,14 @@ class TestCocoSchemaFailures(unittest.TestCase):
         data = valid_base_dataset()
         data["annotations"][0]["image_id"] = 999
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("references unknown image_id", str(ctx.exception))
 
     def test_annotation_unknown_category_id(self):
         data = valid_base_dataset()
         data["annotations"][0]["category_id"] = 999
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("references unknown category_id", str(ctx.exception))
 
     # root validator failures: keypoints rules when category has keypoints
@@ -290,7 +291,7 @@ class TestCocoSchemaFailures(unittest.TestCase):
         # remove keypoints to trigger "must include 'keypoints'"
         data["annotations"][0]["keypoints"] = None
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("must include 'keypoints'", str(ctx.exception))
 
     def test_kp_category_keypoints_length_mismatch(self):
@@ -298,7 +299,7 @@ class TestCocoSchemaFailures(unittest.TestCase):
         # have only 2*3 numbers instead of 3*3
         data["annotations"][0]["keypoints"] = [0, 0, 2, 0, 0, 2]
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("keypoints length must be", str(ctx.exception))
 
     def test_kp_category_num_keypoints_mismatch(self):
@@ -307,14 +308,14 @@ class TestCocoSchemaFailures(unittest.TestCase):
         data["annotations"][0]["keypoints"] = [0, 0, 2, 0, 0, 2, 0, 0, 0]
         data["annotations"][0]["num_keypoints"] = 3
         with self.assertRaises(ValidationError) as ctx:
-            CocoDataset.parse_obj(data)
+            CocoDataset.model_validate(data)
         self.assertIn("num_keypoints=", str(ctx.exception))
 
 
 def _load_coco(path: str) -> CocoDataset:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return CocoDataset.parse_obj(data)
+    return CocoDataset.model_validate(data)
 
 
 class TestCocoDatasetSuccess(unittest.TestCase):

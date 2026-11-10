@@ -35,7 +35,7 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
             "task_templates": [{"task": "classification", "labels": ["cat", "dog"]}],
             "splits": minimal_splits_dict(),
         }
-        di = DatasetInfo.parse_obj(payload)
+        di = DatasetInfo.model_validate(payload)
         self.assertEqual(di.task_templates[0].task, "classification")
         self.assertEqual(di.task_templates[0].labels, ["cat", "dog"])
 
@@ -44,7 +44,7 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
             "task_templates": [{"task": "detection", "labels": ["person"]}],
             "splits": minimal_splits_dict(),
         }
-        di = DatasetInfo.parse_obj(payload)
+        di = DatasetInfo.model_validate(payload)
         self.assertEqual(di.task_templates[0].task, "detection")
 
     def test_keypoints_requires_num_keypoints(self):
@@ -55,7 +55,7 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
             "splits": minimal_splits_dict(),
         }
         with self.assertRaises(ValidationError) as ctx:
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
         self.assertIn("num_keypoints", str(ctx.exception))
 
     def test_keypoints_num_keypoints_must_be_positive_int(self):
@@ -72,7 +72,7 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
                     "splits": minimal_splits_dict(),
                 }
                 with self.assertRaises(ValidationError):
-                    DatasetInfo.parse_obj(payload)
+                    DatasetInfo.model_validate(payload)
 
         ok_payload = {
             "task_templates": [
@@ -80,7 +80,7 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
             ],
             "splits": minimal_splits_dict(),
         }
-        di = DatasetInfo.parse_obj(ok_payload)
+        di = DatasetInfo.model_validate(ok_payload)
         self.assertEqual(di.task_templates[0].num_keypoints, 8)
 
     def test_annotations_subset_enforced_when_provided(self):
@@ -92,7 +92,7 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
             "splits": minimal_splits_dict(),
         }
         with self.assertRaises(ValidationError):
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
 
         # detection requires {"category_id", "bbox"}
         payload = {
@@ -102,7 +102,7 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
             "splits": minimal_splits_dict(),
         }
         with self.assertRaises(ValidationError):
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
 
         # keypoints requires {"category_id", "bbox", "keypoints"}
         payload = {
@@ -117,7 +117,7 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
             "splits": minimal_splits_dict(),
         }
         with self.assertRaises(ValidationError):
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
 
         # ok with required subset + extras
         payload = {
@@ -131,7 +131,7 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
             ],
             "splits": minimal_splits_dict(),
         }
-        di = DatasetInfo.parse_obj(payload)
+        di = DatasetInfo.model_validate(payload)
         self.assertEqual(di.task_templates[0].task, "keypoints")
 
     def test_task_literal_invalid(self):
@@ -142,13 +142,13 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
             "splits": minimal_splits_dict(),
         }
         with self.assertRaises(ValidationError):
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
 
     def test_exactly_one_task_template_required(self):
         # none
         payload = {"task_templates": [], "splits": minimal_splits_dict()}
         with self.assertRaises(ValidationError):
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
 
         # two
         payload = {
@@ -159,7 +159,7 @@ class TestTaskTemplateWithDicts(unittest.TestCase):
             "splits": minimal_splits_dict(),
         }
         with self.assertRaises(ValidationError):
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
 
 
 class TestSplitsWithDicts(unittest.TestCase):
@@ -168,7 +168,7 @@ class TestSplitsWithDicts(unittest.TestCase):
             "task_templates": [{"task": "classification", "labels": ["x"]}],
             "splits": minimal_splits_dict(),
         }
-        di = DatasetInfo.parse_obj(payload)
+        di = DatasetInfo.model_validate(payload)
         self.assertIn("train", di.splits)
         self.assertIn("validation", di.splits)
         self.assertIn("test", di.splits)
@@ -182,7 +182,7 @@ class TestSplitsWithDicts(unittest.TestCase):
             },
         }
         with self.assertRaises(ValidationError) as ctx:
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
         self.assertIn("splits must include", str(ctx.exception))
 
     def test_unlabeled_dataset_valid(self):
@@ -192,7 +192,7 @@ class TestSplitsWithDicts(unittest.TestCase):
             "splits": None,
             "description": "An unlabeled dataset without annotations",
         }
-        di = DatasetInfo.parse_obj(payload)
+        di = DatasetInfo.model_validate(payload)
         self.assertTrue(di.unlabeled)
         self.assertIsNone(di.task_templates)
         self.assertIsNone(di.splits)
@@ -204,7 +204,7 @@ class TestSplitsWithDicts(unittest.TestCase):
             "splits": None,
         }
         with self.assertRaises(ValidationError) as ctx:
-            DatasetInfo.parse_obj(payload_with_templates)
+            DatasetInfo.model_validate(payload_with_templates)
         self.assertIn("task_templates must be null for unlabeled datasets", str(ctx.exception))
 
         payload_with_splits = {
@@ -213,7 +213,7 @@ class TestSplitsWithDicts(unittest.TestCase):
             "splits": minimal_splits_dict(),
         }
         with self.assertRaises(ValidationError) as ctx2:
-            DatasetInfo.parse_obj(payload_with_splits)
+            DatasetInfo.model_validate(payload_with_splits)
         self.assertIn("splits must be null for unlabeled datasets", str(ctx2.exception))
 
     def test_splits_must_be_mapping(self):
@@ -222,11 +222,11 @@ class TestSplitsWithDicts(unittest.TestCase):
             "splits": None,
         }
         with self.assertRaises(ValidationError):
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
 
         payload["splits"] = []  # not a mapping
         with self.assertRaises(ValidationError):
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
 
     def test_splitinfo_required_fields_via_dict(self):
         # split missing required 'dataset_name'
@@ -239,7 +239,7 @@ class TestSplitsWithDicts(unittest.TestCase):
             },
         }
         with self.assertRaises(ValidationError):
-            DatasetInfo.parse_obj(payload)
+            DatasetInfo.model_validate(payload)
 
 
 class TestFeaturesWithDicts(unittest.TestCase):
@@ -249,7 +249,7 @@ class TestFeaturesWithDicts(unittest.TestCase):
             "splits": minimal_splits_dict(),
             # no "features" key at all
         }
-        di = DatasetInfo.parse_obj(payload)
+        di = DatasetInfo.model_validate(payload)
         self.assertIsNone(di.features)
 
     def test_features_basic_image_sequence_dict(self):
@@ -261,7 +261,7 @@ class TestFeaturesWithDicts(unittest.TestCase):
                 "labels": {"_type": "Sequence", "id": None},
             },
         }
-        di = DatasetInfo.parse_obj(payload)
+        di = DatasetInfo.model_validate(payload)
         self.assertEqual(di.features.image.type, "Image")
         self.assertEqual(di.features.labels.type, "Sequence")
 
@@ -284,7 +284,7 @@ class TestFeaturesWithDicts(unittest.TestCase):
                 },
             },
         }
-        di = DatasetInfo.parse_obj(payload)
+        di = DatasetInfo.model_validate(payload)
         self.assertEqual(di.features.image.type, "Image")
 
 
@@ -300,15 +300,15 @@ class TestDatasetInfosWithDicts(unittest.TestCase):
             "cats_dogs": self.mk_di_dict("classification"),
             "people_det": self.mk_di_dict("detection"),
         }
-        infos = DatasetInfos.parse_obj(data)
-        self.assertIn("cats_dogs", infos.__root__)
+        infos = DatasetInfos.model_validate(data)
+        self.assertIn("cats_dogs", infos.root)
         self.assertEqual(infos["people_det"].task_templates[0].task, "detection")
 
     def test_parse_from_json_string(self):
         data = {"my_ds": self.mk_di_dict("classification")}
         json_str = json.dumps(data)
-        infos = DatasetInfos.parse_raw(json_str)
-        self.assertIn("my_ds", infos.__root__)
+        infos = DatasetInfos.model_validate_json(json_str)
+        self.assertIn("my_ds", infos.root)
 
     def test_datasetinfos_value_must_be_datasetinfo_shape(self):
         bad = {
@@ -316,14 +316,14 @@ class TestDatasetInfosWithDicts(unittest.TestCase):
             "bad_ds": {"not": "a DatasetInfo"},
         }
         with self.assertRaises(ValidationError):
-            DatasetInfos.parse_obj(bad)
+            DatasetInfos.model_validate(bad)
 
     def test_load_sample_dataset_info_classification(self):
         ds_path = osp.join(_get_dataset_path(), "classification_sample")
         datainfo_path = osp.join(ds_path, "dataset_infos.json")
         with open(datainfo_path, "r") as f:
             di_dict = json.load(f)
-        di = DatasetInfos.parse_obj(di_dict)["classification_sample"]
+        di = DatasetInfos.model_validate(di_dict)["classification_sample"]
         self.assertEqual(di.task_templates[0].task, "classification")
         self.assertIn("train", di.splits)
         self.assertIn("validation", di.splits)
@@ -334,7 +334,7 @@ class TestDatasetInfosWithDicts(unittest.TestCase):
         datainfo_path = osp.join(ds_path, "dataset_infos.json")
         with open(datainfo_path, "r") as f:
             di_dict = json.load(f)
-        di = DatasetInfos.parse_obj(di_dict)["objectdetection_sample"]
+        di = DatasetInfos.model_validate(di_dict)["objectdetection_sample"]
         self.assertEqual(di.task_templates[0].task, "detection")
         self.assertIn("train", di.splits)
         self.assertIn("validation", di.splits)
@@ -345,7 +345,7 @@ class TestDatasetInfosWithDicts(unittest.TestCase):
         datainfo_path = osp.join(ds_path, "dataset_infos.json")
         with open(datainfo_path, "r") as f:
             di_dict = json.load(f)
-        di = DatasetInfos.parse_obj(di_dict)["keypoints_sample"]
+        di = DatasetInfos.model_validate(di_dict)["keypoints_sample"]
         self.assertEqual(di.task_templates[0].task, "keypoints")
         self.assertIn("train", di.splits)
         self.assertIn("validation", di.splits)

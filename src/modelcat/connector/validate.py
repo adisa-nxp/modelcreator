@@ -420,7 +420,7 @@ class DatasetValidator:
 
         # run pydantic validation
         try:
-            DatasetInfo.parse_obj(dataset_info)
+            DatasetInfo.model_validate(dataset_info)
         except Exception as e:
             messages.append(
                 {
@@ -698,7 +698,7 @@ class DatasetValidator:
 
         # run pydantic validation
         try:
-            CocoDataset.parse_obj(coco)
+            CocoDataset.model_validate(coco)
         except Exception as e:
             messages.append(
                 {

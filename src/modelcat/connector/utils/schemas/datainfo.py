@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationInfo, field_validator, model_validator
 
 
 class ImageFeature(BaseModel):
@@ -19,11 +19,9 @@ class ImageFeature(BaseModel):
     type: Literal["Image"] = Field(
         alias="_type"
     )  # because fields starting with an underscore are treated as private attributes by default
-
-    class Config:
-        allow_population_by_field_name = (
-            False  # populate via alias "_type" (default OK)
-        )
+    model_config = ConfigDict(populate_by_name=(
+        False  # populate via alias "_type" (default OK)
+    ))
 
 
 class TextFeature(BaseModel):
@@ -40,9 +38,7 @@ class TextFeature(BaseModel):
 
     id: Optional[Any] = None
     type: Literal["Text"] = Field(alias="_type")
-
-    class Config:
-        allow_population_by_field_name = False
+    model_config = ConfigDict(populate_by_name=False)
 
 
 class BBoxFeature(BaseModel):
@@ -61,9 +57,7 @@ class BBoxFeature(BaseModel):
 
     id: Optional[Any] = None
     type: Literal["BBoxFeature"] = Field(alias="_type")
-
-    class Config:
-        allow_population_by_field_name = False
+    model_config = ConfigDict(populate_by_name=False)
 
 
 class ClassLabel(BaseModel):
@@ -86,9 +80,7 @@ class ClassLabel(BaseModel):
     num_classes: Optional[int] = None
     names: Optional[List[str]] = None
     type: Literal["ClassLabel"] = Field(alias="_type")
-
-    class Config:
-        allow_population_by_field_name = False
+    model_config = ConfigDict(populate_by_name=False)
 
 
 class SequenceFeature(BaseModel):
@@ -136,9 +128,7 @@ class Features(BaseModel):
 
     image: Optional[ImageFeature] = None
     labels: Optional[SequenceFeature] = None
-
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 class SplitInfo(BaseModel):
@@ -166,9 +156,7 @@ class SplitInfo(BaseModel):
     dataset_name: str
     num_examples: Optional[int] = None
     num_bytes: Optional[int] = None
-
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 class TaskTemplate(BaseModel):
@@ -202,11 +190,14 @@ class TaskTemplate(BaseModel):
 
     task: Literal["classification", "detection", "keypoints"]
     labels: List[str]
-    num_keypoints: Optional[int] = None
-    annotations: Optional[List[str]] = None
+    # validate_default=True is the v2 equivalent of v1 validator(..., always=True)
+    num_keypoints: Optional[int] = Field(None, validate_default=True)
+    annotations: Optional[List[str]] = Field(None, validate_default=True)
 
-    @validator("num_keypoints", always=True, pre=True)
-    def _check_num_keypoints(cls, v, values):
+    @field_validator("num_keypoints", mode="before")
+    @classmethod
+    def _check_num_keypoints(cls, v, info: ValidationInfo):
+        values = info.data
         """
         Require `num_keypoints` for keypoint tasks and ensure it is a positive integer.
         Runs even when the field is missing (`always=True`).
@@ -218,8 +209,10 @@ class TaskTemplate(BaseModel):
                 )
         return v
 
-    @validator("annotations", always=True)
-    def _check_annotations_nonempty(cls, v, values):
+    @field_validator("annotations")
+    @classmethod
+    def _check_annotations_nonempty(cls, v, info: ValidationInfo):
+        values = info.data
         """
         If `annotations` is provided, enforce task-specific minimum required fields.
 
@@ -287,8 +280,8 @@ class DatasetInfo(BaseModel):
     """
 
     unlabeled: bool = False
-    task_templates: Optional[List[TaskTemplate]]
-    splits: Optional[Dict[str, SplitInfo]]
+    task_templates: Optional[List[TaskTemplate]] = Field(None, validate_default=True)
+    splits: Optional[Dict[str, SplitInfo]] = None
     description: str = ""
     citation: str = ""
     homepage: str = ""
@@ -304,8 +297,10 @@ class DatasetInfo(BaseModel):
     dataset_size: Optional[int] = None
     size_in_bytes: Optional[int] = None
 
-    @validator("task_templates", always=True)
-    def check_min_length(cls, v, values):
+    @field_validator("task_templates")
+    @classmethod
+    def check_min_length(cls, v, info: ValidationInfo):
+        values = info.data
         """
         Require exactly one task template if dataset is not unlabeled.
         Require None if dataset is unlabeled.
@@ -323,8 +318,8 @@ class DatasetInfo(BaseModel):
             raise ValueError("task_templates must contain exactly one element for labeled datasets")
         return v
 
-    @root_validator
-    def _require_three_splits(cls, values):
+    @model_validator(mode="after")
+    def _require_three_splits(self):
         """
         Ensure canonical split keys exist: "train", "validation", and "test" for labeled datasets.
         Ensure splits is None for unlabeled datasets.
@@ -339,12 +334,12 @@ class DatasetInfo(BaseModel):
         The debug `print` can be useful while wiring up configs and can be
         removed in production if verbose logs are undesirable.
         """
-        splits = values.get("splits")
+        splits = self.splits
 
-        if values.get("unlabeled"):
+        if self.unlabeled:
             if splits is not None:
                 raise ValueError("splits must be null for unlabeled datasets")
-            return values
+            return self
 
         if not isinstance(splits, dict) or not splits:
             raise ValueError(
@@ -356,10 +351,10 @@ class DatasetInfo(BaseModel):
         if missing:
             raise ValueError(f"splits must include {required}; missing: {missing}")
 
-        return values
+        return self
 
 
-class DatasetInfos(BaseModel):
+class DatasetInfos(RootModel[Dict[str, DatasetInfo]]):
     """
     Container for the top-level dataset_infos.json file.
 
@@ -369,35 +364,32 @@ class DatasetInfos(BaseModel):
             "<dataset_name2>": <DatasetInfo>,
             ...
         }
+
+    Pydantic v2 replaced the v1 ``__root__`` field with ``RootModel``; the mapping
+    is available as ``.root``. The dict-like helpers below keep the old API.
     """
-
-    __root__: Dict[str, DatasetInfo]
-
-    class Config:
-        extra = "forbid"
 
     # make it dict-like
     def __getitem__(self, key: str) -> DatasetInfo:
-        return self.__root__[key]
+        return self.root[key]
 
     def __iter__(self):
-        return iter(self.__root__)
+        return iter(self.root)
 
     def __len__(self) -> int:
-        return len(self.__root__)
+        return len(self.root)
 
     def keys(self):
-        return self.__root__.keys()
+        return self.root.keys()
 
     def values(self):
-        return self.__root__.values()
+        return self.root.values()
 
     def items(self):
-        return self.__root__.items()
+        return self.root.items()
 
     def get(self, key: str, default=None):
-        return self.__root__.get(key, default)
-
+        return self.root.get(key, default)
 
 if __name__ == "__main__":
     import json
@@ -405,5 +397,5 @@ if __name__ == "__main__":
     dataset_infos_path = "/path/to/dataset_infos.json"
     with open(dataset_infos_path) as f:
         data = json.load(f)
-    dataset_info = DatasetInfos.parse_obj(data)
+    dataset_info = DatasetInfos.model_validate(data)
     print(dataset_info)
