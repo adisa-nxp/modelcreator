@@ -109,7 +109,7 @@ dependencies = [ # Optional
   "pycocotools",
   "requests>=2,<3",
   "retry",
-  "pydantic<2",
+  "pydantic>=2.5,<3",
   "Pillow"
 ]
 

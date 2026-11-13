@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional, Union
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 """
 This file contains validation schemas for COCO-style annotations
@@ -30,10 +30,7 @@ class Info(BaseModel):
     contributor: Optional[str] = None
     url: Optional[str] = None
     date_created: Optional[str] = None
-
-    class Config:
-        # any extra field is allowed
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 class License(BaseModel):
@@ -49,9 +46,7 @@ class License(BaseModel):
     id: int
     name: Optional[str] = None
     url: Optional[str] = None
-
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 class Category(BaseModel):
@@ -75,11 +70,10 @@ class Category(BaseModel):
     skeleton: Optional[List[List[int]]] = (
         None  # list of [from, to] keypoint connections
     )
+    model_config = ConfigDict(extra="allow")
 
-    class Config:
-        extra = "allow"
-
-    @validator("keypoints")
+    @field_validator("keypoints")
+    @classmethod
     def _keypoints_when_provided(cls, v):
         """
         Validate that 'keypoints'—when present—is a clean list of non-empty strings.
@@ -100,8 +94,10 @@ class Category(BaseModel):
             raise ValueError("keypoints entries must be non-empty strings.")
         return v
 
-    @validator("skeleton")
-    def _skeleton_when_provided(cls, v, values):
+    @field_validator("skeleton")
+    @classmethod
+    def _skeleton_when_provided(cls, v, info: ValidationInfo):
+        values = info.data
         """
         Validate that 'skeleton'—when present:
           - is a list of [i, j] pairs of ints,
@@ -165,9 +161,7 @@ class Image(BaseModel):
     date_captured: Optional[str] = None
     coco_url: Optional[str] = None
     flickr_url: Optional[str] = None
-
-    class Config:
-        extra = "allow"
+    model_config = ConfigDict(extra="allow")
 
 
 class Annotation(BaseModel):
@@ -192,19 +186,19 @@ class Annotation(BaseModel):
     image_id: Union[int, float, str]
     category_id: int
     bbox: Optional[List[Union[int, float]]] = Field(default_factory=list)
-    segmentation: Optional[Union[List[List[Union[int, float]]], Dict]] = None
+    segmentation: Optional[Union[List[List[Union[int, float]]], Dict]] = Field(None, validate_default=True)
     iscrowd: Optional[int] = None  # allow None/0/1
     area: Optional[Union[int, float]] = None
 
     # optional keypoints for pose tasks
     keypoints: Optional[List[Union[int, float]]] = None
     num_keypoints: Optional[int] = None
+    model_config = ConfigDict(extra="allow")
 
-    class Config:
-        extra = "allow"
-
-    @validator("bbox")
-    def _check_bbox(cls, v, values):
+    @field_validator("bbox")
+    @classmethod
+    def _check_bbox(cls, v, info: ValidationInfo):
+        values = info.data
         """
         Validate 'bbox' when supplied:
         - If missing or empty: allowed (some tasks omit bbox).
@@ -241,8 +235,10 @@ class Annotation(BaseModel):
                 raise ValueError(f"[ann id={ann_id}] bbox values must be non-negative.")
         return v
 
-    @validator("keypoints")
-    def _check_keypoints(cls, v, values):
+    @field_validator("keypoints")
+    @classmethod
+    def _check_keypoints(cls, v, info: ValidationInfo):
+        values = info.data
         ann_id = values.get("id", "<unknown>")  # for error messages
 
         if v is None:
@@ -271,7 +267,8 @@ class Annotation(BaseModel):
                 )
         return v
 
-    @validator("segmentation", pre=True, always=True)
+    @field_validator("segmentation", mode="before")
+    @classmethod
     def _ensure_seg_default(cls, v):
         """
         Ensure 'segmentation' defaults to `[[]]` instead of `None` for consumers
@@ -282,8 +279,10 @@ class Annotation(BaseModel):
         """
         return [[]] if v is None else v
 
-    @validator("iscrowd")
-    def _check_iscrowd(cls, v, values):
+    @field_validator("iscrowd")
+    @classmethod
+    def _check_iscrowd(cls, v, info: ValidationInfo):
+        values = info.data
         """
         Validate 'iscrowd' flag when supplied.
 
@@ -352,12 +351,10 @@ class CocoDataset(BaseModel):
     categories: List[Category]
     images: List[Image]
     annotations: List[Annotation]
+    model_config = ConfigDict(extra="allow")
 
-    class Config:
-        extra = "allow"
-
-    @root_validator
-    def _uniqueness_and_refs(cls, values):
+    @model_validator(mode="after")
+    def _uniqueness_and_refs(self):
         """
         Enforce cross-object uniqueness and reference integrity.
 
@@ -377,17 +374,17 @@ class CocoDataset(BaseModel):
                       visible keypoints (v > 0) computed from the annotation.
 
         Returns:
-            The original values dict if all checks pass.
+            The validated model instance if all checks pass.
 
         Raises:
             ValueError: If any integrity rule is violated.
         """
 
         # extract sections, defaulting to empty lists if not available.
-        licenses = values.get("licenses") or []
-        categories = values.get("categories") or []
-        images = values.get("images") or []
-        annotations = values.get("annotations") or []
+        licenses = self.licenses or []
+        categories = self.categories or []
+        images = self.images or []
+        annotations = self.annotations or []
 
         # unique IDs within each list
         def ensure_unique(objs, label):
@@ -493,8 +490,7 @@ class CocoDataset(BaseModel):
                             f"but computed visible={visible}."
                         )
 
-        return values
-
+        return self
 
 if __name__ == "__main__":
     import json
@@ -502,5 +498,5 @@ if __name__ == "__main__":
     annot_path = "/path/to/annotations/coco_train.json"
     with open(annot_path) as f:
         data = json.load(f)
-    coco = CocoDataset.parse_obj(data)
+    coco = CocoDataset.model_validate(data)
     print(coco)
